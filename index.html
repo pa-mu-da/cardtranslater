@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRPG カード翻訳ツール v2</title>
+  <meta name="description" content="TRPGのPNP用PDFを読み込み、カードを切り出し、日本語翻訳テキストを上書きしてZIPでエクスポートするローカルツール。" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f1117;--panel:#1a1d27;--card:#22263a;--inp:#2c3050;
+      --bdr:#3a3f5c;--bdf:#6c63ff;--acc:#6c63ff;--ach:#8a82ff;
+      --acs:rgba(108,99,255,.15);--ok:#34d399;--err:#f87171;--warn:#fbbf24;
+      --t1:#e8eaf6;--t2:#9ea3c0;--t3:#5a5f7e;
+      --sh:0 4px 24px rgba(0,0,0,.5);--r:10px;--rs:6px;
+    }
+    html{font-size:14px}
+    body{font-family:'Segoe UI','Noto Sans JP',system-ui,sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;display:flex;flex-direction:column}
+    header{background:var(--panel);border-bottom:1px solid var(--bdr);padding:0 16px;display:flex;align-items:center;gap:12px;height:52px;flex-shrink:0;position:sticky;top:0;z-index:100}
+    .logo{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:700;letter-spacing:.03em;flex-shrink:0}
+    .logo-icon{width:28px;height:28px;background:linear-gradient(135deg,var(--acc),#a78bfa);border-radius:7px;display:grid;place-items:center;font-size:.9rem}
+    .tabs{display:flex;gap:3px}
+    .tab{padding:5px 12px;border-radius:var(--rs);border:1px solid var(--bdr);background:transparent;color:var(--t2);cursor:pointer;font-size:.82rem;font-weight:500;transition:all .2s;display:flex;align-items:center;gap:5px;font-family:inherit}
+    .tab .n{width:16px;height:16px;border-radius:50%;background:var(--inp);display:grid;place-items:center;font-size:.65rem;font-weight:700}
+    .tab.active{background:var(--acs);border-color:var(--acc);color:var(--t1)}
+    .tab.active .n{background:var(--acc);color:#fff}
+    .tab:hover:not(.active){background:var(--card);color:var(--t1)}
+    .hdr-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+    main{flex:1;display:flex;overflow:hidden}
+    .sb{width:290px;min-width:240px;background:var(--panel);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+    .sec{padding:14px;border-bottom:1px solid var(--bdr)}
+    .sec:last-child{border-bottom:none}
+    .sec-t{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);margin-bottom:8px}
+    label{display:block;font-size:.77rem;color:var(--t2);margin-bottom:3px}
+    input[type=number],input[type=text],select,textarea{width:100%;background:var(--inp);border:1px solid var(--bdr);border-radius:var(--rs);color:var(--t1);padding:6px 9px;font-size:.82rem;font-family:inherit;outline:none;transition:border-color .2s}
+    input[type=number]:focus,input[type=text]:focus,select:focus,textarea:focus{border-color:var(--bdf)}
+    input[type=range]{width:100%;accent-color:var(--acc)}
+    input[type=color]{width:34px;height:28px;padding:2px;border-radius:var(--rs);border:1px solid var(--bdr);background:var(--inp);cursor:pointer}
+    .g2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    .f{margin-bottom:8px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 12px;border-radius:var(--rs);border:none;cursor:pointer;font-size:.82rem;font-weight:600;font-family:inherit;transition:all .2s;white-space:nowrap}
+    .bp{background:var(--acc);color:#fff}
+    .bp:hover{background:var(--ach);transform:translateY(-1px)}
+    .bs{background:var(--inp);color:var(--t1);border:1px solid var(--bdr)}
+    .bs:hover{background:var(--card);border-color:var(--bdf)}
+    .bok{background:var(--ok);color:#0f1117}
+    .bok:hover{filter:brightness(1.1);transform:translateY(-1px)}
+    .bng{background:rgba(248,113,113,.15);color:var(--err);border:1px solid rgba(248,113,113,.3)}
+    .bng:hover{background:rgba(248,113,113,.25)}
+    .bwarn{background:rgba(251,191,36,.15);color:var(--warn);border:1px solid rgba(251,191,36,.3)}
+    .bwarn:hover{background:rgba(251,191,36,.25)}
+    .bfull{width:100%}
+    .btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+    .dz{border:2px dashed var(--bdr);border-radius:var(--r);padding:20px 14px;text-align:center;cursor:pointer;transition:all .2s}
+    .dz:hover,.dz.over{border-color:var(--acc);background:var(--acs)}
+    .dz-ico{font-size:1.8rem;margin-bottom:6px}
+    .dz-t{font-size:.82rem;color:var(--t2)}
+    .dz-s{font-size:.71rem;color:var(--t3);margin-top:3px}
+    .ca{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+    .ctb{padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:8px;flex-shrink:0}
+    .cw{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:flex-start;padding:18px;position:relative}
+    canvas{display:block}
+    .pills{display:flex;flex-wrap:wrap;gap:5px}
+    .pill{padding:3px 10px;border-radius:999px;border:1px solid var(--bdr);background:var(--inp);color:var(--t2);font-size:.72rem;cursor:pointer;transition:all .2s}
+    .pill.active{background:var(--acc);border-color:var(--acc);color:#fff}
+    .pnl{display:none;width:100%;height:100%}
+    .pnl.on{display:flex;flex-direction:column}
+    .es{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t3);gap:10px;text-align:center;padding:32px}
+    .es-ico{font-size:2.8rem;opacity:.4}
+    .es-t{font-size:.86rem}
+    .sp{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
+    .pb-wrap{width:100%;height:4px;background:var(--inp);border-radius:2px;overflow:hidden;margin-top:5px}
+    .pb{height:100%;background:linear-gradient(90deg,var(--acc),#a78bfa);border-radius:2px;width:0%;transition:width .3s}
+    #toast{position:fixed;bottom:20px;right:20px;background:var(--card);border:1px solid var(--bdr);color:var(--t1);border-radius:var(--r);padding:10px 16px;font-size:.82rem;box-shadow:var(--sh);opacity:0;transform:translateY(8px);transition:all .3s;z-index:9999;pointer-events:none;max-width:300px}
+    #toast.on{opacity:1;transform:translateY(0)}
+    #toast.ok{border-color:var(--ok)}
+    #toast.err{border-color:var(--err)}
+    #toast.warn{border-color:var(--warn)}
+    .m8{margin-top:8px}
+    .m4{margin-top:4px}
+    .row{display:flex;align-items:center;gap:7px}
+    .muted{color:var(--t3);font-size:.74rem}
+    .div{border:none;border-top:1px solid var(--bdr);margin:7px 0}
+    /* Step 3 */
+    #step3.on{flex-direction:row}
+    .cn-list{display:flex;flex-direction:column;gap:4px}
+    .cn-item{background:var(--card);border:2px solid var(--bdr);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+    .cn-item:hover{border-color:var(--acc)}
+    .cn-item.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acs)}
+    .cn-item canvas{display:block;width:100%;height:auto}
+    .cn-label{padding:2px 6px;font-size:.66rem;color:var(--t3);text-align:center;background:var(--panel);border-top:1px solid var(--bdr)}
+    .cn-badge{position:absolute;top:4px;right:4px;background:var(--acc);color:#fff;border-radius:999px;padding:1px 5px;font-size:.6rem;font-weight:700}
+    .cn-del{position:absolute;top:4px;left:4px;background:rgba(248,113,113,.85);color:#fff;border:none;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:.75rem;display:none;align-items:center;justify-content:center;transition:background .2s}
+    .cn-del:hover{background:var(--err)}
+    .cn-item:hover .cn-del{display:flex}
+    .rp{width:265px;min-width:230px;background:var(--panel);border-left:1px solid var(--bdr);display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0}
+    .eca{flex:1;display:flex;overflow:hidden}
+    .ecw{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:flex-start;padding:18px;background:var(--bg)}
+    #editCanvas{display:block;cursor:crosshair}
+    .bl-list{display:flex;flex-direction:column;gap:4px}
+    .bl-item{background:var(--inp);border:1px solid var(--bdr);border-radius:var(--rs);padding:6px 8px;cursor:pointer;transition:border-color .2s}
+    .bl-item:hover,.bl-item.sel{border-color:var(--acc)}
+    .bl-t{font-size:.77rem;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:3px}
+    .bl-c{font-size:.67rem;color:var(--t3);margin-top:2px}
+    .cr{display:flex;align-items:center;gap:6px}
+    .cr .chx{flex:1}
+    /* Fonts list */
+    .font-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--inp);border:1px solid var(--bdr);border-radius:999px;font-size:.72rem;color:var(--t2)}
+    .font-tag button{background:none;border:none;color:var(--t3);cursor:pointer;font-size:.75rem;padding:0;line-height:1}
+    .font-tag button:hover{color:var(--err)}
+    .font-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+    /* Templates */
+    .tpl-item{background:var(--inp);border:1px solid var(--bdr);border-radius:var(--rs);padding:6px 8px;display:flex;align-items:center;gap:6px;margin-bottom:4px}
+    .tpl-name{flex:1;font-size:.78rem;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tpl-cnt{font-size:.67rem;color:var(--t3)}
+    /* Modal */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:5000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+    .modal-bg.on{display:flex}
+    .modal{background:var(--panel);border:1px solid var(--bdr);border-radius:var(--r);padding:24px;max-width:400px;width:90%;box-shadow:var(--sh)}
+    .modal h3{font-size:1rem;margin-bottom:10px;color:var(--t1)}
+    .modal p{font-size:.83rem;color:var(--t2);margin-bottom:16px;line-height:1.5}
+    .modal-btns{display:flex;gap:8px;flex-wrap:wrap}
+    /* Resize section */
+    .unit-toggle{display:flex;gap:4px;margin-bottom:8px}
+    .unit-btn{flex:1;padding:5px;border:1px solid var(--bdr);border-radius:var(--rs);background:var(--inp);color:var(--t2);cursor:pointer;font-size:.78rem;font-family:inherit;transition:all .2s;text-align:center}
+    .unit-btn.active{background:var(--acc);border-color:var(--acc);color:#fff}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-icon">🃏</div>TRPG カード翻訳ツール</div>
+  <div class="tabs">
+    <button class="tab active" id="tabStep1" onclick="goStep(1)"><span class="n">1</span>PDF読み込み</button>
+    <button class="tab" id="tabStep2" onclick="goStep(2)"><span class="n">2</span>切り出し</button>
+    <button class="tab" id="tabStep3" onclick="goStep(3)"><span class="n">3</span>翻訳・編集</button>
+  </div>
+  <div class="hdr-right">
+    <button class="btn bs" onclick="saveProject()" title="作業ファイルを保存">💾 保存</button>
+    <button class="btn bs" onclick="document.getElementById('loadProjectFi').click()" title="作業ファイルを読込">📂 読込</button>
+    <input type="file" id="loadProjectFi" accept=".trpg" style="display:none" onchange="loadProject(this.files[0])"/>
+  </div>
+</header>
+<main>
+
+<!-- ====== STEP 1 ====== -->
+<div id="step1" class="pnl on" style="flex-direction:row;overflow:hidden;">
+  <div class="sb">
+    <div class="sec">
+      <div class="sec-t">📄 PDFファイル</div>
+      <div class="dz" id="dz" onclick="document.getElementById('fi').click()">
+        <div class="dz-ico">📂</div>
+        <div class="dz-t">クリックまたはドラッグ＆ドロップ</div>
+        <div class="dz-s">PDFファイルを選択</div>
+      </div>
+      <input type="file" id="fi" accept=".pdf" style="display:none" onchange="loadPdf(this.files[0])"/>
+      <div id="pdfInfo" style="display:none;" class="m8">
+        <div class="row"><span class="muted" id="pdfName" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span><span class="muted" id="pdfPg"></span></div>
+        <div class="pb-wrap" id="lprog" style="display:none;"><div class="pb" id="lpb"></div></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sec-t">📑 ページ選択</div>
+      <div class="pills" id="pgpills"></div>
+    </div>
+    <div class="sec">
+      <div class="sec-t">🖨 解像度倍率 (DPI Scale)</div>
+      <div class="row"><input type="range" id="dpiR" min="0.5" max="5" step="0.5" value="2" oninput="dpiSlide(this.value)" style="flex:1"/><span id="dpiL" class="muted">x2.0</span></div>
+      <div class="row m4">
+        <input type="number" id="dpiNum" value="2" min="0.5" max="5" step="0.5" style="flex:1;" oninput="dpiNum(this.value)"/>
+        <button class="btn bp" onclick="reRenderAll()" title="変更した解像度で再レンダリング">↻ 再描画</button>
+      </div>
+      <div class="muted m4">変更後は「再描画」を押して適用</div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-t">🔍 ズーム</div>
+      <div class="row"><input type="range" id="z1" min="20" max="200" value="100" oninput="z1Changed(this.value)" style="flex:1"/><span id="z1L" class="muted">100%</span></div>
+    </div>
+    <div class="sec" style="margin-top:auto">
+      <button class="btn bp bfull" id="btnS2" onclick="goStep(2)" disabled>切り出し設定へ →</button>
+    </div>
+  </div>
+  <div class="ca">
+    <div class="ctb"><span class="muted" id="s1lbl">ページを選択してください</span></div>
+    <div class="cw">
+      <div class="es" id="s1empty"><div class="es-ico">📋</div><div class="es-t">PDFを読み込むとプレビューが表示されます</div></div>
+      <canvas id="pdfCanvas" style="display:none;box-shadow:var(--sh);"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ====== STEP 2 ====== -->
+<div id="step2" class="pnl" style="flex-direction:row;overflow:hidden;">
+  <div class="sb">
+    <div class="sec">
+      <div class="sec-t">✂️ 切り出し設定 <span class="muted">(DPI倍率込みpx)</span></div>
+      <div class="f g2">
+        <div><label>開始 X</label><input type="number" id="cX" value="0" min="0" oninput="drawGuides()"/></div>
+        <div><label>開始 Y</label><input type="number" id="cY" value="0" min="0" oninput="drawGuides()"/></div>
+      </div>
+      <div class="f g2">
+        <div><label>カード幅 W</label><input type="number" id="cW" value="200" min="1" oninput="drawGuides()"/></div>
+        <div><label>カード高 H</label><input type="number" id="cH" value="300" min="1" oninput="drawGuides()"/></div>
+      </div>
+      <div class="f g2">
+        <div><label>列数</label><input type="number" id="cCols" value="3" min="1" oninput="drawGuides()"/></div>
+        <div><label>行数</label><input type="number" id="cRows" value="3" min="1" oninput="drawGuides()"/></div>
+      </div>
+      <div class="f g2">
+        <div><label>横間隔 GX</label><input type="number" id="cGX" value="0" min="0" oninput="drawGuides()"/></div>
+        <div><label>縦間隔 GY</label><input type="number" id="cGY" value="0" min="0" oninput="drawGuides()"/></div>
+      </div>
+      <div class="div"></div>
+      <div class="f">
+        <label>切り出すページ（複数可）</label>
+        <div class="pills m4" id="cpills"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sec-t">🎨 ガイド枠の色</div>
+      <select id="guideColor" onchange="changeGuideColor(this.value)">
+        <option value="blue">青（デフォルト）</option>
+        <option value="white">白</option>
+        <option value="black">黒</option>
+      </select>
+    </div>
+    <div class="sec">
+      <div class="sec-t">🔍 プレビューズーム</div>
+      <div class="row"><input type="range" id="z2" min="10" max="200" value="60" oninput="z2Changed(this.value)" style="flex:1"/><span id="z2L" class="muted">60%</span></div>
+    </div>
+    <div class="sec">
+      <button class="btn bs bfull m4" onclick="autoDetect()" style="margin-bottom:7px">🤖 グリッド自動検出</button>
+      <button class="btn bp bfull" id="btnCut" onclick="doCut()" disabled>✂️ カードを切り出す</button>
+    </div>
+  </div>
+  <div class="ca">
+    <div class="ctb">
+      <span class="muted" id="s2lbl">プレビューページ：</span>
+      <div class="pills" id="s2pills"></div>
+    </div>
+    <div class="cw">
+      <div class="es" id="s2empty"><div class="es-ico">✂️</div><div class="es-t">Step 1でPDFを読み込んでください</div></div>
+      <div id="s2cc" style="display:none;position:relative;">
+        <canvas id="guideC"></canvas>
+        <canvas id="guideOv" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== STEP 3 ====== -->
+<div id="step3" class="pnl">
+  <!-- Card list sidebar -->
+  <div class="sb" style="width:195px;min-width:155px;overflow-y:hidden;display:flex;flex-direction:column;height:100%;">
+    <div class="sec" style="flex-shrink:0;">
+      <div class="sec-t">📐 カード一括リサイズ</div>
+      <div class="unit-toggle">
+        <button class="unit-btn active" id="unitPx" onclick="setUnit('px')">px</button>
+        <button class="unit-btn" id="unitPct" onclick="setUnit('%')">%</button>
+      </div>
+      <div class="f g2">
+        <div><label id="rsWLabel">幅 W (px)</label><input type="number" id="rsW" value="" placeholder="自動" min="1"/></div>
+        <div><label id="rsHLabel">高 H (px)</label><input type="number" id="rsH" value="" placeholder="自動" min="1"/></div>
+      </div>
+      <div class="f row">
+        <input type="checkbox" id="rsAR" checked style="width:auto;accent-color:var(--acc)"/>
+        <label for="rsAR" style="margin:0;color:var(--t2);">アスペクト比維持</label>
+      </div>
+      <button class="btn bwarn bfull" onclick="applyResize()">📐 全カードに適用</button>
+    </div>
+    <div class="sec" style="flex:1;overflow-y:hidden;display:flex;flex-direction:column;min-height:0;">
+      <div class="sec-t" style="flex-shrink:0;">🃏 カード一覧</div>
+      <div class="cn-list" id="cnList" style="flex:1;overflow-y:auto;"></div>
+      <div class="es" id="cnEmpty" style="height:auto;padding:16px 0;flex-shrink:0;"><div class="es-ico" style="font-size:1.6rem;">🃏</div><div class="es-t">なし</div></div>
+    </div>
+  </div>
+
+  <!-- Edit canvas area -->
+  <div class="eca">
+    <div style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div class="ctb">
+        <span class="muted" id="ecLbl">カードを選択してください</span>
+        <div class="row" style="margin-left:auto;gap:5px;">
+          <button class="btn bs" onclick="ez(-0.1)" style="padding:4px 9px;">−</button>
+          <span id="ezL" class="muted" style="min-width:36px;text-align:center;">100%</span>
+          <button class="btn bs" onclick="ez(+0.1)" style="padding:4px 9px;">＋</button>
+        </div>
+      </div>
+      <div style="padding:4px 12px;background:var(--panel);border-bottom:1px solid var(--bdr);font-size:.71rem;color:var(--t3);">
+        💡 クリック→テキスト追加 / ドラッグ→移動 / 右パネルで編集
+      </div>
+      <div class="ecw" id="ecw">
+        <div class="es" id="ecEmpty"><div class="es-ico">✏️</div><div class="es-t">カードを選択してください</div></div>
+        <div id="ecc" style="display:none;position:relative;"><canvas id="editCanvas"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Right properties panel -->
+    <div class="rp">
+      <!-- Text block list -->
+      <div class="sec">
+        <div class="sec-t">📝 テキストブロック</div>
+        <div class="bl-list" id="blList"></div>
+        <div class="muted m4" id="blEmpty">カードをクリックで追加</div>
+      </div>
+
+      <!-- Custom Fonts -->
+      <div class="sec">
+        <div class="sec-t">🔤 カスタムフォント</div>
+        <div class="dz" style="padding:10px; border-width: 1px;" onclick="document.getElementById('fontFi').click()">
+          <div class="dz-t" style="font-size:.78rem;">フォントファイルを追加</div>
+          <div class="dz-s" style="font-size:.65rem;">.ttf .otf .woff .woff2</div>
+        </div>
+        <input type="file" id="fontFi" accept=".ttf,.otf,.woff,.woff2" multiple style="display:none" onchange="loadFonts(this.files)"/>
+        <div class="font-tags" id="fontTags"></div>
+      </div>
+
+      <!-- Templates -->
+      <div class="sec">
+        <div class="sec-t">📋 テンプレート</div>
+        <div id="tplList"></div>
+        <div class="muted" id="tplEmpty">テンプレなし</div>
+        <div class="div"></div>
+        <div class="f">
+          <label>テンプレ名</label>
+          <input type="text" id="tplName" placeholder="例: カード名エリア" />
+        </div>
+        <button class="btn bs bfull" onclick="saveTpl()">💾 現在の配置をテンプレとして保存</button>
+      </div>
+
+      <!-- Block props -->
+      <div class="sec" id="bpProp" style="display:none;">
+        <div class="sec-t">⚙️ ブロック設定</div>
+        <div class="f">
+          <label>テキスト</label>
+          <textarea id="pText" rows="3" style="resize:vertical;" oninput="upd('text',this.value)"></textarea>
+        </div>
+        <div class="f">
+          <label>座布団の色</label>
+          <div class="cr"><input type="color" id="pBg" value="#ffffff" oninput="syncBg(this.value)"/><input type="text" id="pBgH" class="chx" value="#ffffff" maxlength="7" oninput="syncBgH(this.value)"/></div>
+        </div>
+        <div class="f">
+          <label>座布団の透明度</label>
+          <div class="row"><input type="range" id="pAlpha" min="0" max="1" step=".05" value="1" oninput="upd('bgAlpha',parseFloat(this.value));document.getElementById('pAlphaL').textContent=Math.round(this.value*100)+'%'" style="flex:1"/><span id="pAlphaL" class="muted">100%</span></div>
+        </div>
+        <div class="f">
+          <label>テキストの色</label>
+          <div class="cr"><input type="color" id="pTc" value="#000000" oninput="syncTc(this.value)"/><input type="text" id="pTcH" class="chx" value="#000000" maxlength="7" oninput="syncTcH(this.value)"/></div>
+        </div>
+        <div class="f">
+          <label>フォントサイズ</label>
+          <input type="number" id="pFs" value="14" min="6" max="72" oninput="upd('fontSize',parseInt(this.value))"/>
+        </div>
+        <div class="f">
+          <label>フォント</label>
+          <select id="pFf" onchange="upd('fontFamily',this.value)">
+            <option value="'Noto Sans JP',sans-serif">Noto Sans JP</option>
+            <option value="'Yu Gothic','YuGothic',sans-serif">游ゴシック</option>
+            <option value="serif">明朝体</option>
+            <option value="monospace">等幅</option>
+            <option value="sans-serif">サンセリフ</option>
+          </select>
+        </div>
+        <div class="f">
+          <label>テキスト揃え</label>
+          <select id="pTa" onchange="upd('textAlign',this.value)">
+            <option value="left">左揃え</option>
+            <option value="center">中央揃え</option>
+            <option value="right">右揃え</option>
+          </select>
+        </div>
+        <div class="f g2">
+          <div><label>幅 W</label><input type="number" id="pW" value="80" min="20" oninput="upd('w',parseInt(this.value))"/></div>
+          <div><label>高さ H</label><input type="number" id="pH" value="40" min="10" oninput="upd('h',parseInt(this.value))"/></div>
+        </div>
+        <div class="f g2">
+          <div><label>X</label><input type="number" id="pX" value="0" oninput="upd('x',parseInt(this.value))"/></div>
+          <div><label>Y</label><input type="number" id="pY" value="0" oninput="upd('y',parseInt(this.value))"/></div>
+        </div>
+        <div class="f">
+          <label>パディング</label>
+          <input type="number" id="pPad" value="4" min="0" max="30" oninput="upd('padding',parseInt(this.value))"/>
+        </div>
+        <button class="btn bng bfull m8" onclick="delBlk()">🗑 このブロックを削除</button>
+      </div>
+
+      <div class="sec" style="margin-top:auto;">
+        <button class="btn bok bfull" id="expBtn" onclick="doExport()" disabled>💾 ZIPでダウンロード</button>
+        <div class="muted m4" id="expLbl"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+<div id="toast"></div>
+
+<!-- Template apply modal -->
+<div class="modal-bg" id="tplModal">
+  <div class="modal">
+    <h3>📋 テンプレを適用</h3>
+    <p id="tplModalMsg"></p>
+    <div class="modal-btns">
+      <button class="btn bp" onclick="applyTpl('replace')">置換（既存のブロックを消して貼り付け）</button>
+      <button class="btn bs" onclick="applyTpl('append')">追加（既存に追記）</button>
+      <button class="btn bs" onclick="closeTplModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ============================================================
+//  State
+// ============================================================
+const S={
+  pdfDoc:null,pageCount:0,
+  pages:{},         // cached rendered pages
+  curP1:1,curP2:1,
+  z1:1,z2:.6,ze:1,
+  dpi:2,
+  cutPages:[],
+  cards:[],         // [{id,pageNum,col,row,imageDataUrl,width,height,textBlocks:[]}]
+  eIdx:-1,
+  selBlk:null,
+  drag:null,
+  customFonts:[],   // [{name, family}]
+  templates:[],     // [{name, textBlocks:[...]}]
+  rsUnit:'px',
+  _pendingTplIdx:-1,// for modal
+  guideColor:'blue',// guide color option
+};
+
+// ============================================================
+//  Util
+// ============================================================
+let _tt;
+function toast(msg,type){const el=document.getElementById('toast');el.textContent=msg;el.className='on '+(type||'');clearTimeout(_tt);_tt=setTimeout(()=>{el.className=''},3200);}
+function gi(id){return document.getElementById(id)}
+function goStep(n){
+  document.querySelectorAll('.pnl').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  gi('step'+n).classList.add('on');gi('tabStep'+n).classList.add('active');
+  if(n===2)s2Render();
+  if(n===3)refreshList();
+}
+
+// ============================================================
+//  STEP 1: PDF Load
+// ============================================================
+const dz=gi('dz');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over')});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop',e=>{
+  e.preventDefault();dz.classList.remove('over');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type==='application/pdf')loadPdf(f);
+  else toast('PDFファイルを選択してください','err');
+});
+
+async function loadPdf(file){
+  if(!file)return;
+  toast('PDFを読み込み中…');
+  gi('pdfInfo').style.display='block';gi('pdfName').textContent=file.name;
+  gi('lprog').style.display='block';setpb(10);
+  const buf=await file.arrayBuffer();setpb(40);
+  try{
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    S.pdfDoc=pdf;S.pageCount=pdf.numPages;S.pages={};
+    gi('pdfPg').textContent=pdf.numPages+'p';
+    setpb(80);buildPills();setpb(100);
+    setTimeout(()=>{gi('lprog').style.display='none'},600);
+    await selP1(1);
+    gi('btnS2').disabled=false;gi('btnCut').disabled=false;
+    toast('読み込み完了 ('+pdf.numPages+'ページ)','ok');
+  }catch(e){toast('エラー: '+e.message,'err');gi('lprog').style.display='none';}
+}
+function setpb(v){gi('lpb').style.width=v+'%'}
+
+function buildPills(){
+  const p1=gi('pgpills'),p2=gi('cpills'),p3=gi('s2pills');
+  p1.innerHTML='';p2.innerHTML='';p3.innerHTML='';S.cutPages=[1];
+  for(let i=1;i<=S.pageCount;i++){
+    p1.appendChild(mkPill(i,i===1,()=>selP1(i)));
+    const b=mkPill(i,i===1,function(){togCut(i,this)});p2.appendChild(b);
+    p3.appendChild(mkPill(i,i===1,()=>selP2(i)));
+  }
+}
+function mkPill(l,a,fn){
+  const el=document.createElement('button');
+  el.className='pill'+(a?' active':'');el.textContent=l;el.onclick=function(){fn.call(this)};return el;
+}
+function togCut(n,el){
+  const i=S.cutPages.indexOf(n);
+  if(i>=0){if(S.cutPages.length===1)return;S.cutPages.splice(i,1);el.classList.remove('active');}
+  else{S.cutPages.push(n);el.classList.add('active');}
+}
+
+async function renderPage(n,dpiOverride){
+  const scale=dpiOverride!==undefined?dpiOverride:S.dpi;
+  if(S.pages[n]&&!dpiOverride)return S.pages[n];
+  const page=await S.pdfDoc.getPage(n);
+  const vp=page.getViewport({scale});
+  const oc=document.createElement('canvas');oc.width=vp.width;oc.height=vp.height;
+  await page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise;
+  if(!dpiOverride)S.pages[n]=oc;
+  return oc;
+}
+
+async function selP1(n){
+  S.curP1=n;
+  document.querySelectorAll('#pgpills .pill').forEach(p=>p.classList.toggle('active',+p.textContent===n));
+  const c=gi('pdfCanvas'),e=gi('s1empty');
+  c.style.display='none';e.style.display='flex';
+  try{
+    const oc=await renderPage(n);
+    c.width=oc.width;c.height=oc.height;c.getContext('2d').drawImage(oc,0,0);
+    c.style.width=(oc.width*S.z1)+'px';c.style.height=(oc.height*S.z1)+'px';
+    c.style.display='block';e.style.display='none';
+    gi('s1lbl').textContent='ページ '+n+' / '+S.pageCount+'  ('+oc.width+'×'+oc.height+'px @ x'+S.dpi+')';
+  }catch(err){toast('ページ読み込みエラー','err');}
+}
+
+// DPI controls
+function dpiSlide(v){
+  S.dpi=parseFloat(v);gi('dpiL').textContent='x'+v;gi('dpiNum').value=v;
+}
+function dpiNum(v){
+  const n=parseFloat(v)||2;S.dpi=n;gi('dpiL').textContent='x'+n;gi('dpiR').value=Math.min(5,Math.max(0.5,n));
+}
+async function reRenderAll(){
+  if(!S.pdfDoc){toast('先にPDFを読み込んでください','err');return;}
+  S.pages={};
+  toast('再レンダリング中… (x'+S.dpi+')');
+  await selP1(S.curP1);
+  toast('再レンダリング完了','ok');
+}
+
+function z1Changed(v){
+  S.z1=v/100;gi('z1L').textContent=v+'%';
+  const c=gi('pdfCanvas');if(c.width){c.style.width=(c.width*S.z1)+'px';c.style.height=(c.height*S.z1)+'px';}
+}
+
+// ============================================================
+//  Font Upload
+// ============================================================
+async function loadFonts(files){
+  for(const file of Array.from(files)){
+    const name=file.name.replace(/\.[^.]+$/,'');
+    const family='CustomFont_'+name.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now();
+    const buf=await file.arrayBuffer();
+    const ff=new FontFace(family,buf);
+    try{
+      await ff.load();
+      document.fonts.add(ff);
+      S.customFonts.push({name,family});
+      // Add to font selector
+      const opt=document.createElement('option');
+      opt.value="'"+family+"',sans-serif";opt.textContent=name+' (アップロード)';
+      gi('pFf').appendChild(opt);
+      // Add tag
+      addFontTag(name,family);
+      toast('フォント "'+name+'" を登録しました','ok');
+    }catch(e){toast('フォント読込エラー: '+file.name,'err');}
+  }
+}
+
+function addFontTag(name,family){
+  const tag=document.createElement('div');tag.className='font-tag';
+  const sp=document.createElement('span');sp.textContent=name;
+  const btn=document.createElement('button');btn.textContent='×';
+  btn.onclick=()=>removeFont(family,tag);
+  tag.appendChild(sp);tag.appendChild(btn);
+  gi('fontTags').appendChild(tag);
+}
+
+function removeFont(family,tagEl){
+  S.customFonts=S.customFonts.filter(f=>f.family!==family);
+  tagEl.remove();
+  // Remove from selector
+  const sel=gi('pFf');
+  const opt=[...sel.options].find(o=>o.value.includes(family));
+  if(opt)sel.removeChild(opt);
+}
+
+// ============================================================
+//  STEP 2: Guide / Cut
+// ============================================================
+async function selP2(n){
+  S.curP2=n;
+  document.querySelectorAll('#s2pills .pill').forEach(p=>p.classList.toggle('active',+p.textContent===n));
+  await s2Render();
+}
+async function s2Render(){
+  if(!S.pdfDoc)return;
+  const oc=await renderPage(S.curP2);
+  const gc=gi('guideC'),ov=gi('guideOv');
+  const z=S.z2;
+  gc.width=oc.width;gc.height=oc.height;
+  gc.style.width=(oc.width*z)+'px';gc.style.height=(oc.height*z)+'px';
+  ov.width=oc.width;ov.height=oc.height;
+  ov.style.width=(oc.width*z)+'px';ov.style.height=(oc.height*z)+'px';
+  gc.getContext('2d').drawImage(oc,0,0);
+  gi('s2cc').style.display='block';gi('s2empty').style.display='none';
+  drawGuides();
+}
+function cp(){
+  return{
+    x:parseInt(gi('cX').value)||0,y:parseInt(gi('cY').value)||0,
+    w:parseInt(gi('cW').value)||200,h:parseInt(gi('cH').value)||300,
+    cols:parseInt(gi('cCols').value)||3,rows:parseInt(gi('cRows').value)||3,
+    gx:parseInt(gi('cGX').value)||0,gy:parseInt(gi('cGY').value)||0,
+  };
+}
+function drawGuides(){
+  const ov=gi('guideOv');if(!ov.width)return;
+  const ctx=ov.getContext('2d');ctx.clearRect(0,0,ov.width,ov.height);
+  const p=cp();
+  
+  let strokeColor = 'rgba(108,99,255,.9)';
+  let fillColor = 'rgba(108,99,255,.1)';
+  let textColor = 'rgba(108,99,255,.95)';
+  if (S.guideColor === 'white') {
+    strokeColor = 'rgba(255,255,255,.9)';
+    fillColor = 'rgba(255,255,255,.1)';
+    textColor = 'rgba(255,255,255,.95)';
+  } else if (S.guideColor === 'black') {
+    strokeColor = 'rgba(0,0,0,.9)';
+    fillColor = 'rgba(0,0,0,.15)';
+    textColor = 'rgba(0,0,0,.95)';
+  }
+  
+  ctx.strokeStyle=strokeColor;ctx.lineWidth=2;ctx.setLineDash([6,3]);
+  for(let r=0;r<p.rows;r++){
+    for(let c=0;c<p.cols;c++){
+      const rx=p.x+c*(p.w+p.gx),ry=p.y+r*(p.h+p.gy);
+      ctx.fillStyle=fillColor;ctx.fillRect(rx,ry,p.w,p.h);ctx.strokeRect(rx,ry,p.w,p.h);
+      ctx.setLineDash([]);ctx.fillStyle=textColor;ctx.font='bold 11px sans-serif';
+      ctx.fillText(''+(r*p.cols+c+1),rx+4,ry+14);ctx.setLineDash([6,3]);
+    }
+  }
+  ctx.setLineDash([]);
+}
+function changeGuideColor(val){
+  S.guideColor=val;
+  drawGuides();
+}
+function z2Changed(v){S.z2=v/100;gi('z2L').textContent=v+'%';s2Render();}
+
+async function autoDetect(){
+  if(!S.pdfDoc){toast('先にPDFを読み込んでください','err');return;}
+  toast('自動検出中…');
+  const oc=await renderPage(S.curP2);
+  const d=oc.getContext('2d').getImageData(0,0,oc.width,oc.height).data;
+  let mx=oc.width,my=oc.height,maxx=0,maxy=0;
+  for(let y=0;y<oc.height;y++)for(let x=0;x<oc.width;x++){
+    const i=(y*oc.width+x)*4;
+    if(d[i]<250||d[i+1]<250||d[i+2]<250){if(x<mx)mx=x;if(y<my)my=y;if(x>maxx)maxx=x;if(y>maxy)maxy=y;}
+  }
+  if(maxx<=mx){toast('検出失敗','err');return;}
+  const cols=parseInt(gi('cCols').value)||3,rows=parseInt(gi('cRows').value)||3;
+  const cw=Math.floor((maxx-mx)/cols),ch=Math.floor((maxy-my)/rows);
+  gi('cX').value=mx;gi('cY').value=my;gi('cW').value=cw;gi('cH').value=ch;gi('cGX').value=0;gi('cGY').value=0;
+  drawGuides();toast('検出: 開始('+mx+','+my+') カード('+cw+'x'+ch+')','ok');
+}
+
+async function doCut(){
+  if(!S.pdfDoc){toast('先にPDFを読み込んでください','err');return;}
+  const p=cp(),btn=gi('btnCut');btn.disabled=true;btn.innerHTML='<span class="sp"></span> 切り出し中…';
+  S.cards=[];let id=0;
+  for(const pn of S.cutPages){
+    const oc=await renderPage(pn);
+    for(let r=0;r<p.rows;r++)for(let c=0;c<p.cols;c++){
+      const sx=p.x+c*(p.w+p.gx),sy=p.y+r*(p.h+p.gy);
+      if(sx+p.w>oc.width||sy+p.h>oc.height)continue;
+      const cc=document.createElement('canvas');cc.width=p.w;cc.height=p.h;
+      cc.getContext('2d').drawImage(oc,sx,sy,p.w,p.h,0,0,p.w,p.h);
+      S.cards.push({id:id++,pageNum:pn,col:c,row:r,
+        imageDataUrl:cc.toDataURL('image/png'),width:p.w,height:p.h,textBlocks:[]});
+    }
+  }
+  btn.disabled=false;btn.innerHTML='✂️ カードを切り出す';
+  if(!S.cards.length){toast('カードが見つかりません','err');return;}
+  gi('expBtn').disabled=false;gi('expLbl').textContent=S.cards.length+'枚準備完了';
+  toast(S.cards.length+'枚切り出しました！','ok');
+  goStep(3);
+}
+
+// ============================================================
+//  STEP 3: Resize
+// ============================================================
+function setUnit(u){
+  S.rsUnit=u;
+  gi('unitPx').classList.toggle('active',u==='px');
+  gi('unitPct').classList.toggle('active',u==='%');
+  gi('rsWLabel').textContent='幅 W ('+u+')';
+  gi('rsHLabel').textContent='高 H ('+u+')';
+}
+
+async function applyResize(){
+  if(!S.cards.length){toast('カードがありません','err');return;}
+  const wv=parseFloat(gi('rsW').value)||0;
+  const hv=parseFloat(gi('rsH').value)||0;
+  const keepAR=gi('rsAR').checked;
+  if(!wv&&!hv){toast('幅または高さを入力してください','err');return;}
+
+  let done=0;
+  for(const card of S.cards){
+    const origW=card.width,origH=card.height;
+    let newW,newH;
+    if(S.rsUnit==='px'){
+      newW=wv||origW;newH=hv||origH;
+      if(keepAR){
+        if(wv&&!hv) newH=Math.round(origH*newW/origW);
+        else if(hv&&!wv) newW=Math.round(origW*newH/origH);
+        else{const s=Math.min(newW/origW,newH/origH);newW=Math.round(origW*s);newH=Math.round(origH*s);}
+      }
+    }else{
+      const sw=wv?wv/100:1,sh=hv?hv/100:1;
+      if(keepAR){const s=wv?sw:sh;newW=Math.round(origW*s);newH=Math.round(origH*s);}
+      else{newW=Math.round(origW*sw);newH=Math.round(origH*sh);}
+    }
+    newW=Math.max(1,newW);newH=Math.max(1,newH);
+    if(newW===origW&&newH===origH){done++;continue;}
+    // Scale image
+    const cc=document.createElement('canvas');cc.width=newW;cc.height=newH;
+    const ctx=cc.getContext('2d');
+    await new Promise(res=>{const img=new Image();img.onload=()=>{ctx.drawImage(img,0,0,newW,newH);res();};img.src=card.imageDataUrl;});
+    card.imageDataUrl=cc.toDataURL('image/png');
+    // Scale text block positions
+    const sx=newW/origW,sy=newH/origH;
+    card.textBlocks.forEach(b=>{b.x=Math.round(b.x*sx);b.y=Math.round(b.y*sy);b.w=Math.round(b.w*sx);b.h=Math.round(b.h*sy);b.fontSize=Math.round(b.fontSize*Math.min(sx,sy));});
+    card.width=newW;card.height=newH;
+    done++;
+  }
+  _eImg=null;
+  refreshList();
+  if(S.eIdx>=0)renderEdit();
+  toast(done+'枚のカードをリサイズしました','ok');
+}
+
+// ============================================================
+//  STEP 3: Card list
+// ============================================================
+function refreshList(){
+  const nav=gi('cnList'),emp=gi('cnEmpty');nav.innerHTML='';
+  if(!S.cards.length){emp.style.display='flex';return;}emp.style.display='none';
+  S.cards.forEach((card,i)=>{
+    const item=document.createElement('div');
+    item.className='cn-item'+(i===S.eIdx?' sel':'');
+    item.onclick=()=>selCard(i);
+    const th=document.createElement('canvas');
+    const tw=167,thh=Math.round(card.height*tw/card.width);
+    th.width=tw;th.height=thh;
+    const img=new Image();
+    img.onload=()=>{const ctx=th.getContext('2d');ctx.drawImage(img,0,0,tw,thh);drawBlocks(ctx,card,tw/card.width);};
+    img.src=card.imageDataUrl;
+    const lbl=document.createElement('div');lbl.className='cn-label';
+    lbl.textContent='Card '+String(i+1).padStart(3,'0')+' p'+card.pageNum;
+    // Delete button
+    const del=document.createElement('button');del.className='cn-del';del.textContent='🗑';del.title='このカードを削除';
+    del.onclick=ev=>{ev.stopPropagation();deleteCard(i);};
+    if(card.textBlocks.length){const bdg=document.createElement('div');bdg.className='cn-badge';bdg.textContent=card.textBlocks.length;item.appendChild(bdg);}
+    item.appendChild(del);item.appendChild(th);item.appendChild(lbl);
+    nav.appendChild(item);
+  });
+  gi('expLbl').textContent=S.cards.length+'枚準備完了';
+}
+
+function deleteCard(i){
+  if(!confirm('Card '+String(i+1).padStart(3,'0')+' を削除しますか？'))return;
+  S.cards.splice(i,1);
+  if(S.eIdx===i){S.eIdx=-1;S.selBlk=null;gi('ecEmpty').style.display='flex';gi('ecc').style.display='none';gi('bpProp').style.display='none';gi('ecLbl').textContent='カードを選択してください';}
+  else if(S.eIdx>i){S.eIdx--;}
+  refreshList();
+  if(S.cards.length===0){gi('expBtn').disabled=true;gi('expLbl').textContent='';}
+}
+
+let _eImg=null;
+function selCard(i){
+  S.eIdx=i;S.selBlk=null;
+  document.querySelectorAll('.cn-item').forEach((el,j)=>el.classList.toggle('sel',j===i));
+  const card=S.cards[i];
+  gi('ecEmpty').style.display='none';gi('ecc').style.display='block';
+  gi('ecLbl').textContent='Card '+String(i+1).padStart(3,'0')+' — p'+card.pageNum+' ('+card.width+'×'+card.height+'px)';
+  _eImg=null;renderEdit();updBlkList();gi('bpProp').style.display='none';
+}
+
+function renderEdit(){
+  if(S.eIdx<0)return;
+  const card=S.cards[S.eIdx],z=S.ze,ec=gi('editCanvas');
+  ec.width=card.width;ec.height=card.height;
+  ec.style.width=(card.width*z)+'px';ec.style.height=(card.height*z)+'px';
+  const ctx=ec.getContext('2d');ctx.clearRect(0,0,card.width,card.height);
+  if(!_eImg||_eImg.src!==card.imageDataUrl){
+    _eImg=new Image();_eImg.onload=()=>{ctx.drawImage(_eImg,0,0);drawBlocks(ctx,card,1,S.selBlk);};_eImg.src=card.imageDataUrl;
+  }else{ctx.drawImage(_eImg,0,0);drawBlocks(ctx,card,1,S.selBlk);}
+}
+
+function drawBlocks(ctx,card,scale,selId){
+  card.textBlocks.forEach(b=>{
+    const x=b.x*scale,y=b.y*scale,w=b.w*scale,h=b.h*scale;
+    const pad=(b.padding||4)*scale,fs=(b.fontSize||14)*scale;
+    ctx.save();
+    ctx.fillStyle=h2r(b.bgColor||'#ffffff',b.bgAlpha!==undefined?b.bgAlpha:1);
+    ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,3*scale);else ctx.rect(x,y,w,h);ctx.fill();
+    if(selId!==undefined&&b.id===selId){ctx.strokeStyle='#6c63ff';ctx.lineWidth=2*scale;ctx.setLineDash([4*scale,3*scale]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);}
+    ctx.fillStyle=b.textColor||'#000000';
+    ctx.font=fs+'px '+(b.fontFamily||'sans-serif');
+    ctx.textAlign=b.textAlign||'left';
+    ctx.textBaseline='top';
+    const lines=wrapTxt(ctx,b.text||'',w-pad*2);
+    const lh=fs*1.35;
+    let ty=y+pad;
+    const tx=b.textAlign==='center'?x+w/2:b.textAlign==='right'?x+w-pad:x+pad;
+    lines.forEach(l=>{ctx.fillText(l,tx,ty);ty+=lh;});
+    ctx.restore();
+  });
+}
+
+function wrapTxt(ctx,txt,maxW){
+  if(!txt)return[''];
+  const out=[];
+  txt.split('\n').forEach(para=>{
+    if(!para){out.push('');return;}let line='';
+    for(const ch of para){const t=line+ch;if(ctx.measureText(t).width>maxW&&line){out.push(line);line=ch;}else line=t;}
+    if(line)out.push(line);
+  });
+  return out.length?out:[''];
+}
+function h2r(hex,a){
+  if(!hex||hex.length<7)return 'rgba(255,255,255,'+a+')';
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return 'rgba('+r+','+g+','+b+','+a+')';
+}
+
+// Canvas interaction
+const ec=gi('editCanvas');
+ec.addEventListener('mousedown',onMD);ec.addEventListener('mousemove',onMM);ec.addEventListener('mouseup',()=>S.drag=null);
+function coords(e){const r=ec.getBoundingClientRect();return{x:Math.round((e.clientX-r.left)/S.ze),y:Math.round((e.clientY-r.top)/S.ze)};}
+
+function onMD(e){
+  if(S.eIdx<0)return;const{x,y}=coords(e);const card=S.cards[S.eIdx];
+  let hit=null;
+  for(let i=card.textBlocks.length-1;i>=0;i--){const b=card.textBlocks[i];if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){hit=b;break;}}
+  if(hit){selBlk(hit.id);S.drag={id:hit.id,sx:x,sy:y,ox:hit.x,oy:hit.y};}
+  else{
+    const nb={id:Date.now(),text:'テキスト',x,y,w:100,h:36,
+      bgColor:'#ffffff',bgAlpha:.9,textColor:'#000000',fontSize:14,
+      fontFamily:"'Noto Sans JP',sans-serif",textAlign:'left',padding:4};
+    card.textBlocks.push(nb);selBlk(nb.id);updBlkList();renderEdit();refreshList();
+  }
+}
+function onMM(e){
+  if(!S.drag)return;const{x,y}=coords(e);const ds=S.drag;
+  const b=S.cards[S.eIdx].textBlocks.find(b=>b.id===ds.id);
+  if(b){b.x=ds.ox+(x-ds.sx);b.y=ds.oy+(y-ds.sy);gi('pX').value=b.x;gi('pY').value=b.y;renderEdit();}
+}
+
+function selBlk(id){
+  S.selBlk=id;const card=S.cards[S.eIdx];
+  const b=card.textBlocks.find(b=>b.id===id);if(!b)return;
+  gi('bpProp').style.display='block';gi('blEmpty').style.display='none';
+  gi('pText').value=b.text||'';gi('pBg').value=b.bgColor||'#ffffff';gi('pBgH').value=b.bgColor||'#ffffff';
+  const al=b.bgAlpha!==undefined?b.bgAlpha:1;gi('pAlpha').value=al;gi('pAlphaL').textContent=Math.round(al*100)+'%';
+  gi('pTc').value=b.textColor||'#000000';gi('pTcH').value=b.textColor||'#000000';
+  gi('pFs').value=b.fontSize||14;gi('pFf').value=b.fontFamily||"'Noto Sans JP',sans-serif";
+  gi('pTa').value=b.textAlign||'left';gi('pW').value=b.w||100;gi('pH').value=b.h||36;
+  gi('pX').value=b.x||0;gi('pY').value=b.y||0;gi('pPad').value=b.padding!==undefined?b.padding:4;
+  document.querySelectorAll('.bl-item').forEach(el=>el.classList.toggle('sel',+el.dataset.id===id));
+  renderEdit();
+}
+function upd(k,v){
+  if(S.eIdx<0||!S.selBlk)return;
+  const b=S.cards[S.eIdx].textBlocks.find(b=>b.id===S.selBlk);
+  if(b){b[k]=v;renderEdit();updBlkList();}
+}
+function delBlk(){
+  if(S.eIdx<0||!S.selBlk)return;
+  S.cards[S.eIdx].textBlocks=S.cards[S.eIdx].textBlocks.filter(b=>b.id!==S.selBlk);
+  S.selBlk=null;gi('bpProp').style.display='none';renderEdit();updBlkList();refreshList();
+}
+function updBlkList(){
+  const list=gi('blList'),card=S.eIdx>=0?S.cards[S.eIdx]:null;list.innerHTML='';
+  if(!card||!card.textBlocks.length){gi('blEmpty').style.display='block';return;}
+  gi('blEmpty').style.display='none';
+  card.textBlocks.forEach(b=>{
+    const item=document.createElement('div');item.className='bl-item'+(b.id===S.selBlk?' sel':'');
+    item.dataset.id=b.id;item.onclick=()=>selBlk(b.id);
+    const sw=document.createElement('span');sw.style.cssText='display:inline-block;width:9px;height:9px;border-radius:2px;background:'+(b.bgColor||'#fff')+';border:1px solid #444;flex-shrink:0;';
+    const tl=document.createElement('div');tl.className='bl-t';tl.appendChild(sw);tl.appendChild(document.createTextNode(' '+(b.text||'（空）')));
+    const cl=document.createElement('div');cl.className='bl-c';cl.textContent='('+b.x+','+b.y+') '+b.w+'×'+b.h;
+    item.appendChild(tl);item.appendChild(cl);list.appendChild(item);
+  });
+}
+
+function syncBg(v){gi('pBgH').value=v;upd('bgColor',v);}
+function syncBgH(v){if(/^#[0-9A-Fa-f]{6}$/.test(v)){gi('pBg').value=v;upd('bgColor',v);}}
+function syncTc(v){gi('pTcH').value=v;upd('textColor',v);}
+function syncTcH(v){if(/^#[0-9A-Fa-f]{6}$/.test(v)){gi('pTc').value=v;upd('textColor',v);}}
+function ez(d){S.ze=Math.max(.2,Math.min(4,S.ze+d));gi('ezL').textContent=Math.round(S.ze*100)+'%';renderEdit();}
+
+// ============================================================
+//  Templates
+// ============================================================
+function saveTpl(){
+  if(S.eIdx<0){toast('カードを選択してください','err');return;}
+  const card=S.cards[S.eIdx];
+  if(!card.textBlocks.length){toast('テキストブロックがありません','err');return;}
+  const name=gi('tplName').value.trim()||('テンプレ＃'+(S.templates.length+1));
+  const tpl={name,textBlocks:JSON.parse(JSON.stringify(card.textBlocks))};
+  S.templates.push(tpl);
+  saveTplsToLS();
+  gi('tplName').value='';
+  renderTplList();
+  toast('「'+name+'」をテンプレとして保存しました','ok');
+}
+
+function renderTplList(){
+  const list=gi('tplList'),emp=gi('tplEmpty');list.innerHTML='';
+  if(!S.templates.length){emp.style.display='block';return;}emp.style.display='none';
+  S.templates.forEach((tpl,i)=>{
+    const row=document.createElement('div');row.className='tpl-item';
+    const nm=document.createElement('span');nm.className='tpl-name';nm.textContent=tpl.name;nm.title=tpl.name;
+    const cnt=document.createElement('span');cnt.className='tpl-cnt';cnt.textContent=tpl.textBlocks.length+'ブロック';
+    const applyBtn=document.createElement('button');applyBtn.className='btn bp';applyBtn.style.cssText='padding:3px 8px;font-size:.72rem;';applyBtn.textContent='適用';
+    applyBtn.onclick=()=>openTplModal(i);
+    const delBtn=document.createElement('button');delBtn.className='btn bng';delBtn.style.cssText='padding:3px 6px;font-size:.72rem;';delBtn.textContent='×';
+    delBtn.onclick=()=>{if(confirm('「'+tpl.name+'」を削除しますか？')){S.templates.splice(i,1);saveTplsToLS();renderTplList();}};
+    row.appendChild(nm);row.appendChild(cnt);row.appendChild(applyBtn);row.appendChild(delBtn);
+    list.appendChild(row);
+  });
+}
+
+function openTplModal(tplIdx){
+  if(S.eIdx<0){toast('カードを選択してください','err');return;}
+  S._pendingTplIdx=tplIdx;
+  const tpl=S.templates[tplIdx];
+  gi('tplModalMsg').textContent='「'+tpl.name+'」 ('+tpl.textBlocks.length+'ブロック) を現在のカードに適用します。';
+  gi('tplModal').classList.add('on');
+}
+function closeTplModal(){gi('tplModal').classList.remove('on');S._pendingTplIdx=-1;}
+
+function applyTpl(mode){
+  if(S.eIdx<0||S._pendingTplIdx<0){closeTplModal();return;}
+  const tpl=S.templates[S._pendingTplIdx];
+  const card=S.cards[S.eIdx];
+  const newBlocks=tpl.textBlocks.map(b=>({...b,id:Date.now()+Math.random()}));
+  if(mode==='replace')card.textBlocks=newBlocks;
+  else card.textBlocks=[...card.textBlocks,...newBlocks];
+  closeTplModal();S.selBlk=null;gi('bpProp').style.display='none';
+  renderEdit();updBlkList();refreshList();
+  toast('テンプレを適用しました','ok');
+}
+
+function saveTplsToLS(){
+  try{localStorage.setItem('trpg_templates',JSON.stringify(S.templates));}catch(e){}
+}
+function loadTplsFromLS(){
+  try{const d=localStorage.getItem('trpg_templates');if(d)S.templates=JSON.parse(d);}catch(e){}
+  renderTplList();
+}
+
+// ============================================================
+//  Export (ZIP)
+// ============================================================
+async function doExport(){
+  if(!S.cards.length){toast('カードがありません','err');return;}
+  const btn=gi('expBtn');btn.disabled=true;btn.innerHTML='<span class="sp"></span> 生成中…';toast('ZIPを生成中…');
+  const zip=new JSZip();
+  for(let i=0;i<S.cards.length;i++){
+    const card=S.cards[i];
+    const cc=document.createElement('canvas');cc.width=card.width;cc.height=card.height;
+    const ctx=cc.getContext('2d');
+    await new Promise(res=>{const img=new Image();img.onload=()=>{ctx.drawImage(img,0,0);res();};img.src=card.imageDataUrl;});
+    drawBlocks(ctx,card,1);
+    zip.file('Card_'+String(i+1).padStart(3,'0')+'.png',cc.toDataURL('image/png').split(',')[1],{base64:true});
+  }
+  const blob=await zip.generateAsync({type:'blob'});saveAs(blob,'cards_translated.zip');
+  btn.disabled=false;btn.innerHTML='💾 ZIPでダウンロード';
+  toast(S.cards.length+'枚をエクスポートしました！','ok');
+}
+
+// ============================================================
+//  Save / Load Project
+// ============================================================
+async function saveProject(){
+  if(!S.cards.length&&!S.templates.length){toast('保存するデータがありません','warn');return;}
+  const project={
+    version:2,
+    dpi:S.dpi,
+    cutParams:{x:parseInt(gi('cX').value)||0,y:parseInt(gi('cY').value)||0,w:parseInt(gi('cW').value)||200,h:parseInt(gi('cH').value)||300,cols:parseInt(gi('cCols').value)||3,rows:parseInt(gi('cRows').value)||3,gx:parseInt(gi('cGX').value)||0,gy:parseInt(gi('cGY').value)||0},
+    customFonts:S.customFonts.map(f=>({name:f.name,family:f.family})),
+    templates:S.templates,
+    cards:S.cards.map(c=>({id:c.id,pageNum:c.pageNum,col:c.col,row:c.row,width:c.width,height:c.height,imageDataUrl:c.imageDataUrl,textBlocks:c.textBlocks})),
+  };
+  const json=JSON.stringify(project);
+  const blob=new Blob([json],{type:'application/json'});
+  const ts=new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
+  saveAs(blob,'trpg_project_'+ts+'.trpg');
+  toast('作業ファイルを保存しました','ok');
+}
+
+async function loadProject(file){
+  if(!file)return;
+  try{
+    const text=await file.text();
+    const project=JSON.parse(text);
+    S.cards=project.cards||[];
+    S.templates=project.templates||[];
+    S.dpi=project.dpi||2;
+    gi('dpiR').value=S.dpi;gi('dpiL').textContent='x'+S.dpi;gi('dpiNum').value=S.dpi;
+    if(project.cutParams){const p=project.cutParams;gi('cX').value=p.x;gi('cY').value=p.y;gi('cW').value=p.w;gi('cH').value=p.h;gi('cCols').value=p.cols;gi('cRows').value=p.rows;gi('cGX').value=p.gx||0;gi('cGY').value=p.gy||0;}
+    S.eIdx=-1;S.selBlk=null;
+    saveTplsToLS();renderTplList();
+    if(S.cards.length){gi('expBtn').disabled=false;gi('expLbl').textContent=S.cards.length+'枚準備完了';}
+    // Warn about custom fonts
+    if(project.customFonts&&project.customFonts.length){
+      toast('フォントは再アップロードが必要です: '+project.customFonts.map(f=>f.name).join(', '),'warn');
+    }
+    goStep(3);
+    toast(S.cards.length+'枚のカードを読み込みました','ok');
+  }catch(e){toast('読み込みエラー: '+e.message,'err');}
+}
+
+// ============================================================
+//  Init
+// ============================================================
+loadTplsFromLS();
+
+// ============================================================
+//  Public API
+// ============================================================
+window.importTextBlocks=function(cardIdx,rows){
+  if(!S.cards[cardIdx])return false;
+  S.cards[cardIdx].textBlocks=rows.map(r=>({
+    id:Date.now()+Math.random(),text:r.text||'',x:+r.x||0,y:+r.y||0,
+    w:+r.w||100,h:+r.h||36,bgColor:r.bgColor||'#ffffff',bgAlpha:r.bgAlpha!==undefined?+r.bgAlpha:.9,
+    textColor:r.textColor||'#000000',fontSize:+r.fontSize||14,
+    fontFamily:r.fontFamily||"'Noto Sans JP',sans-serif",textAlign:r.textAlign||'left',padding:+r.padding||4
+  }));
+  if(S.eIdx===cardIdx){updBlkList();renderEdit();}return true;
+};
+window.exportCardsJSON=function(){return JSON.stringify(S.cards.map(c=>({id:c.id,pageNum:c.pageNum,col:c.col,row:c.row,width:c.width,height:c.height,textBlocks:c.textBlocks})),null,2);};
+</script>
+</body>
+</html>
