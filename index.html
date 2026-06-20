@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
@@ -17,8 +18,8 @@
       --t1:#e8eaf6;--t2:#9ea3c0;--t3:#5a5f7e;
       --sh:0 4px 24px rgba(0,0,0,.5);--r:10px;--rs:6px;
     }
-    html{font-size:14px}
-    body{font-family:'Segoe UI','Noto Sans JP',system-ui,sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;display:flex;flex-direction:column}
+    html{font-size:14px;height:100%}
+    body{font-family:'Segoe UI','Noto Sans JP',system-ui,sans-serif;background:var(--bg);color:var(--t1);height:100vh;display:flex;flex-direction:column;overflow:hidden}
     header{background:var(--panel);border-bottom:1px solid var(--bdr);padding:0 16px;display:flex;align-items:center;gap:12px;height:52px;flex-shrink:0;position:sticky;top:0;z-index:100}
     .logo{display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:700;letter-spacing:.03em;flex-shrink:0}
     .logo-icon{width:28px;height:28px;background:linear-gradient(135deg,var(--acc),#a78bfa);border-radius:7px;display:grid;place-items:center;font-size:.9rem}
@@ -66,7 +67,7 @@
     .pills{display:flex;flex-wrap:wrap;gap:5px}
     .pill{padding:3px 10px;border-radius:999px;border:1px solid var(--bdr);background:var(--inp);color:var(--t2);font-size:.72rem;cursor:pointer;transition:all .2s}
     .pill.active{background:var(--acc);border-color:var(--acc);color:#fff}
-    .pnl{display:none;width:100%;height:100%}
+    .pnl{display:none;width:100%;height:100%;min-height:0}
     .pnl.on{display:flex;flex-direction:column}
     .es{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t3);gap:10px;text-align:center;padding:32px}
     .es-ico{font-size:2.8rem;opacity:.4}
@@ -89,9 +90,9 @@
     .muted{color:var(--t3);font-size:.74rem}
     .div{border:none;border-top:1px solid var(--bdr);margin:7px 0}
     /* Step 3 */
-    #step3.on{flex-direction:row}
+    #step3.on{flex-direction:row;min-height:0}
     .cn-list{display:flex;flex-direction:column;gap:4px}
-    .cn-item{background:var(--card);border:2px solid var(--bdr);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+    .cn-item{background:var(--card);border:2px solid var(--bdr);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:all .2s;position:relative;flex-shrink:0}
     .cn-item:hover{border-color:var(--acc)}
     .cn-item.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acs)}
     .cn-item canvas{display:block;width:100%;height:auto}
@@ -259,7 +260,7 @@
 <!-- ====== STEP 3 ====== -->
 <div id="step3" class="pnl">
   <!-- Card list sidebar -->
-  <div class="sb" style="width:195px;min-width:155px;overflow-y:hidden;display:flex;flex-direction:column;height:100%;">
+  <div class="sb" style="width:195px;min-width:155px;overflow-y:hidden;display:flex;flex-direction:column;height:100%;min-height:0;">
     <div class="sec" style="flex-shrink:0;">
       <div class="sec-t">📐 カード一括リサイズ</div>
       <div class="unit-toggle">
@@ -289,6 +290,9 @@
       <div class="ctb">
         <span class="muted" id="ecLbl">カードを選択してください</span>
         <div class="row" style="margin-left:auto;gap:5px;">
+          <button class="btn bs" id="btnUndo" onclick="undo()" title="元に戻す (Ctrl+Z)" disabled style="padding:4px 9px;">↩</button>
+          <button class="btn bs" id="btnRedo" onclick="redo()" title="やり直す (Ctrl+Y)" disabled style="padding:4px 9px;">↪</button>
+          <div style="width:1px;height:16px;background:var(--bdr);margin:0 4px;"></div>
           <button class="btn bs" onclick="ez(-0.1)" style="padding:4px 9px;">−</button>
           <span id="ezL" class="muted" style="min-width:36px;text-align:center;">100%</span>
           <button class="btn bs" onclick="ez(+0.1)" style="padding:4px 9px;">＋</button>
@@ -342,6 +346,16 @@
         <div class="f">
           <label>テキスト</label>
           <textarea id="pText" rows="3" style="resize:vertical;" oninput="upd('text',this.value)"></textarea>
+        </div>
+        <div class="f">
+          <label>画像から文字読取 (OCR)</label>
+          <div class="row">
+            <select id="pOcrLang" onchange="S.ocrLang=this.value" style="flex:1;">
+              <option value="eng">英語 (English)</option>
+              <option value="jpn">日本語 (Japanese)</option>
+            </select>
+            <button class="btn bp" id="ocrBtn" onclick="runOcrOnBlock()">🤖 実行</button>
+          </div>
         </div>
         <div class="f">
           <label>座布団の色</label>
@@ -438,6 +452,9 @@ const S={
   rsUnit:'px',
   _pendingTplIdx:-1,// for modal
   guideColor:'blue',// guide color option
+  ocrLang:'eng',    // OCR target language
+  undoStack:[],     // undo history snapshot stack
+  redoStack:[],     // redo history snapshot stack
 };
 
 // ============================================================
@@ -654,6 +671,158 @@ function changeGuideColor(val){
   S.guideColor=val;
   drawGuides();
 }
+async function runOcrOnBlock() {
+  if (S.eIdx < 0 || !S.selBlk) return;
+  const card = S.cards[S.eIdx];
+  const b = card.textBlocks.find(blk => blk.id === S.selBlk);
+  if (!b) return;
+
+  const btn = gi('ocrBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="sp"></span> 解析中…';
+  toast('OCR解析を開始中…');
+
+  try {
+    const oc = document.createElement('canvas');
+    oc.width = b.w;
+    oc.height = b.h;
+    const ctx = oc.getContext('2d');
+    
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = card.imageDataUrl;
+    });
+    
+    ctx.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+    const cropDataUrl = oc.toDataURL('image/png');
+    
+    const result = await Tesseract.recognize(
+      cropDataUrl,
+      S.ocrLang,
+      {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const prog = Math.round(m.progress * 100);
+            toast('解析中… ' + prog + '%');
+          }
+        }
+      }
+    );
+    
+    const text = result.data.text.trim();
+    if (text) {
+      b.text = text;
+      gi('pText').value = text;
+      renderEdit();
+      updBlkList();
+      toast('OCR解析完了！', 'ok');
+    } else {
+      toast('文字が検出されませんでした', 'warn');
+    }
+  } catch (e) {
+    console.error(e);
+    toast('OCRエラー: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 実行';
+  }
+}
+
+// ============================================================
+//  Undo / Redo History Management
+// ============================================================
+function makeSnapshot() {
+  return {
+    cardsState: S.cards.map(c => ({
+      id: c.id,
+      textBlocks: JSON.parse(JSON.stringify(c.textBlocks))
+    })),
+    eIdx: S.eIdx,
+    selBlk: S.selBlk
+  };
+}
+
+function applySnapshot(snapshot) {
+  snapshot.cardsState.forEach(hd => {
+    const card = S.cards.find(c => c.id === hd.id);
+    if (card) {
+      card.textBlocks = JSON.parse(JSON.stringify(hd.textBlocks));
+    }
+  });
+  
+  const oldEIdx = S.eIdx;
+  S.eIdx = snapshot.eIdx;
+  S.selBlk = snapshot.selBlk;
+  
+  refreshList();
+  
+  if (S.eIdx >= 0) {
+    if (oldEIdx !== S.eIdx) {
+      selCard(S.eIdx);
+    } else {
+      _eImg = null;
+      renderEdit();
+      updBlkList();
+    }
+    if (S.selBlk) {
+      selBlk(S.selBlk);
+    } else {
+      gi('bpProp').style.display = 'none';
+    }
+  } else {
+    gi('ecEmpty').style.display = 'flex';
+    gi('ecc').style.display = 'none';
+    gi('bpProp').style.display = 'none';
+    gi('ecLbl').textContent = 'カードを選択してください';
+  }
+}
+
+function pushStateToUndo() {
+  const snapshot = makeSnapshot();
+  S.undoStack.push(snapshot);
+  if (S.undoStack.length > 10) {
+    S.undoStack.shift();
+  }
+  S.redoStack = [];
+  updateUndoRedoButtons();
+}
+
+function undo() {
+  if (!S.undoStack.length) return;
+  const currentSnapshot = makeSnapshot();
+  S.redoStack.push(currentSnapshot);
+  
+  const prevSnapshot = S.undoStack.pop();
+  applySnapshot(prevSnapshot);
+  
+  updateUndoRedoButtons();
+  toast('元に戻しました (Undo)', 'ok');
+}
+
+function redo() {
+  if (!S.redoStack.length) return;
+  const currentSnapshot = makeSnapshot();
+  S.undoStack.push(currentSnapshot);
+  if (S.undoStack.length > 10) {
+    S.undoStack.shift();
+  }
+  
+  const nextSnapshot = S.redoStack.pop();
+  applySnapshot(nextSnapshot);
+  
+  updateUndoRedoButtons();
+  toast('やり直しました (Redo)', 'ok');
+}
+
+function updateUndoRedoButtons() {
+  const undoBtn = gi('btnUndo');
+  const redoBtn = gi('btnRedo');
+  if (undoBtn) undoBtn.disabled = S.undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = S.redoStack.length === 0;
+}
+
 function z2Changed(v){S.z2=v/100;gi('z2L').textContent=v+'%';s2Render();}
 
 async function autoDetect(){
@@ -808,21 +977,46 @@ function renderEdit(){
 
 function drawBlocks(ctx,card,scale,selId){
   card.textBlocks.forEach(b=>{
+    const isVisible = b.visible !== false;
+    const isSelected = (selId !== undefined && b.id === selId);
+    if (!isVisible && !isSelected) return;
+
     const x=b.x*scale,y=b.y*scale,w=b.w*scale,h=b.h*scale;
     const pad=(b.padding||4)*scale,fs=(b.fontSize||14)*scale;
     ctx.save();
-    ctx.fillStyle=h2r(b.bgColor||'#ffffff',b.bgAlpha!==undefined?b.bgAlpha:1);
-    ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,3*scale);else ctx.rect(x,y,w,h);ctx.fill();
-    if(selId!==undefined&&b.id===selId){ctx.strokeStyle='#6c63ff';ctx.lineWidth=2*scale;ctx.setLineDash([4*scale,3*scale]);ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);}
-    ctx.fillStyle=b.textColor||'#000000';
-    ctx.font=fs+'px '+(b.fontFamily||'sans-serif');
-    ctx.textAlign=b.textAlign||'left';
-    ctx.textBaseline='top';
-    const lines=wrapTxt(ctx,b.text||'',w-pad*2);
-    const lh=fs*1.35;
-    let ty=y+pad;
-    const tx=b.textAlign==='center'?x+w/2:b.textAlign==='right'?x+w-pad:x+pad;
-    lines.forEach(l=>{ctx.fillText(l,tx,ty);ty+=lh;});
+    
+    if (isVisible) {
+      ctx.fillStyle=h2r(b.bgColor||'#ffffff',b.bgAlpha!==undefined?b.bgAlpha:1);
+      ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,3*scale);else ctx.rect(x,y,w,h);ctx.fill();
+    }
+    
+    if(isSelected){
+      ctx.strokeStyle='#6c63ff';ctx.lineWidth=2*scale;
+      ctx.setLineDash([4*scale,3*scale]);
+      ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+    }
+    
+    if (isVisible) {
+      ctx.fillStyle=b.textColor||'#000000';
+      ctx.font=fs+'px '+(b.fontFamily||'sans-serif');
+      ctx.textAlign=b.textAlign||'left';
+      ctx.textBaseline='top';
+      const lines=wrapTxt(ctx,b.text||'',w-pad*2);
+      const lh=fs*1.35;
+      let ty=y+pad;
+      const tx=b.textAlign==='center'?x+w/2:b.textAlign==='right'?x+w-pad:x+pad;
+      lines.forEach(l=>{ctx.fillText(l,tx,ty);ty+=lh;});
+    } else if (isSelected) {
+      ctx.fillStyle='rgba(108,99,255,0.55)';
+      ctx.font=fs+'px '+(b.fontFamily||'sans-serif');
+      ctx.textAlign=b.textAlign||'left';
+      ctx.textBaseline='top';
+      const lines=wrapTxt(ctx,b.text||'',w-pad*2);
+      const lh=fs*1.35;
+      let ty=y+pad;
+      const tx=b.textAlign==='center'?x+w/2:b.textAlign==='right'?x+w-pad:x+pad;
+      lines.forEach(l=>{ctx.fillText(l,tx,ty);ty+=lh;});
+    }
     ctx.restore();
   });
 }
@@ -852,8 +1046,11 @@ function onMD(e){
   if(S.eIdx<0)return;const{x,y}=coords(e);const card=S.cards[S.eIdx];
   let hit=null;
   for(let i=card.textBlocks.length-1;i>=0;i--){const b=card.textBlocks[i];if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h){hit=b;break;}}
-  if(hit){selBlk(hit.id);S.drag={id:hit.id,sx:x,sy:y,ox:hit.x,oy:hit.y};}
-  else{
+  if(hit){
+    pushStateToUndo();
+    selBlk(hit.id);S.drag={id:hit.id,sx:x,sy:y,ox:hit.x,oy:hit.y};
+  }else{
+    pushStateToUndo();
     const nb={id:Date.now(),text:'テキスト',x,y,w:100,h:36,
       bgColor:'#ffffff',bgAlpha:.9,textColor:'#000000',fontSize:14,
       fontFamily:"'Noto Sans JP',sans-serif",textAlign:'left',padding:4};
@@ -870,6 +1067,7 @@ function selBlk(id){
   S.selBlk=id;const card=S.cards[S.eIdx];
   const b=card.textBlocks.find(b=>b.id===id);if(!b)return;
   gi('bpProp').style.display='block';gi('blEmpty').style.display='none';
+  gi('pOcrLang').value=S.ocrLang;
   gi('pText').value=b.text||'';gi('pBg').value=b.bgColor||'#ffffff';gi('pBgH').value=b.bgColor||'#ffffff';
   const al=b.bgAlpha!==undefined?b.bgAlpha:1;gi('pAlpha').value=al;gi('pAlphaL').textContent=Math.round(al*100)+'%';
   gi('pTc').value=b.textColor||'#000000';gi('pTcH').value=b.textColor||'#000000';
@@ -882,10 +1080,18 @@ function selBlk(id){
 function upd(k,v){
   if(S.eIdx<0||!S.selBlk)return;
   const b=S.cards[S.eIdx].textBlocks.find(b=>b.id===S.selBlk);
-  if(b){b[k]=v;renderEdit();updBlkList();}
+  if(b){
+    if (k !== 'text') {
+      pushStateToUndo();
+    }
+    b[k]=v;
+    renderEdit();
+    updBlkList();
+  }
 }
 function delBlk(){
   if(S.eIdx<0||!S.selBlk)return;
+  pushStateToUndo();
   S.cards[S.eIdx].textBlocks=S.cards[S.eIdx].textBlocks.filter(b=>b.id!==S.selBlk);
   S.selBlk=null;gi('bpProp').style.display='none';renderEdit();updBlkList();refreshList();
 }
@@ -895,9 +1101,34 @@ function updBlkList(){
   gi('blEmpty').style.display='none';
   card.textBlocks.forEach(b=>{
     const item=document.createElement('div');item.className='bl-item'+(b.id===S.selBlk?' sel':'');
-    item.dataset.id=b.id;item.onclick=()=>selBlk(b.id);
+    if (b.visible === false) item.style.opacity = '0.55';
+    item.dataset.id=b.id;
+    item.onclick=(e)=>{
+      if (e.target.closest('.bl-vis-btn')) return;
+      selBlk(b.id);
+    };
     const sw=document.createElement('span');sw.style.cssText='display:inline-block;width:9px;height:9px;border-radius:2px;background:'+(b.bgColor||'#fff')+';border:1px solid #444;flex-shrink:0;';
-    const tl=document.createElement('div');tl.className='bl-t';tl.appendChild(sw);tl.appendChild(document.createTextNode(' '+(b.text||'（空）')));
+    
+    const visBtn=document.createElement('button');
+    visBtn.className='bl-vis-btn';
+    visBtn.style.cssText='background:none;border:none;color:var(--t2);cursor:pointer;font-size:0.9rem;padding:0 4px;margin-left:auto;display:flex;align-items:center;outline:none;';
+    visBtn.textContent = b.visible !== false ? '👁' : '🙈';
+    visBtn.title = b.visible !== false ? '非表示にする' : '表示する';
+    visBtn.onclick=(ev)=>{
+      ev.stopPropagation();
+      b.visible = (b.visible !== false) ? false : true;
+      renderEdit();
+      updBlkList();
+      refreshList();
+    };
+
+    const tl=document.createElement('div');tl.className='bl-t';tl.style.display='flex';tl.style.alignItems='center';tl.style.gap='4px';
+    tl.appendChild(sw);
+    const txtSpan=document.createElement('span');txtSpan.style.cssText='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;flex:1;';
+    txtSpan.textContent = b.text||'（空）';
+    tl.appendChild(txtSpan);
+    tl.appendChild(visBtn);
+
     const cl=document.createElement('div');cl.className='bl-c';cl.textContent='('+b.x+','+b.y+') '+b.w+'×'+b.h;
     item.appendChild(tl);item.appendChild(cl);list.appendChild(item);
   });
@@ -952,6 +1183,7 @@ function closeTplModal(){gi('tplModal').classList.remove('on');S._pendingTplIdx=
 
 function applyTpl(mode){
   if(S.eIdx<0||S._pendingTplIdx<0){closeTplModal();return;}
+  pushStateToUndo();
   const tpl=S.templates[S._pendingTplIdx];
   const card=S.cards[S.eIdx];
   const newBlocks=tpl.textBlocks.map(b=>({...b,id:Date.now()+Math.random()}));
@@ -1038,6 +1270,56 @@ async function loadProject(file){
 loadTplsFromLS();
 
 // ============================================================
+//  Undo / Redo Events & Shortcuts
+// ============================================================
+let _tempSnapshot = null;
+gi('pText').addEventListener('focus', () => {
+  _tempSnapshot = makeSnapshot();
+});
+gi('pText').addEventListener('blur', () => {
+  if (_tempSnapshot && S.eIdx >= 0 && S.selBlk) {
+    const card = S.cards[S.eIdx];
+    const b = card.textBlocks.find(blk => blk.id === S.selBlk);
+    const prevCard = _tempSnapshot.cardsState.find(c => c.id === card.id);
+    const prevBlock = prevCard ? prevCard.textBlocks.find(blk => blk.id === S.selBlk) : null;
+    
+    if (b && prevBlock && b.text !== prevBlock.text) {
+      S.undoStack.push(_tempSnapshot);
+      if (S.undoStack.length > 10) {
+        S.undoStack.shift();
+      }
+      S.redoStack = [];
+      updateUndoRedoButtons();
+    }
+  }
+  _tempSnapshot = null;
+});
+
+window.addEventListener('keydown', e => {
+  if (S.eIdx < 0) return;
+  const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+  
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (activeTag === 'textarea' || activeTag === 'input') {
+      document.activeElement.blur();
+    }
+    e.preventDefault();
+    if (e.shiftKey) {
+      redo();
+    } else {
+      undo();
+    }
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+    if (activeTag === 'textarea' || activeTag === 'input') {
+      document.activeElement.blur();
+    }
+    e.preventDefault();
+    redo();
+  }
+});
+
+// ============================================================
 //  Public API
 // ============================================================
 window.importTextBlocks=function(cardIdx,rows){
@@ -1046,7 +1328,8 @@ window.importTextBlocks=function(cardIdx,rows){
     id:Date.now()+Math.random(),text:r.text||'',x:+r.x||0,y:+r.y||0,
     w:+r.w||100,h:+r.h||36,bgColor:r.bgColor||'#ffffff',bgAlpha:r.bgAlpha!==undefined?+r.bgAlpha:.9,
     textColor:r.textColor||'#000000',fontSize:+r.fontSize||14,
-    fontFamily:r.fontFamily||"'Noto Sans JP',sans-serif",textAlign:r.textAlign||'left',padding:+r.padding||4
+    fontFamily:r.fontFamily||"'Noto Sans JP',sans-serif",textAlign:r.textAlign||'left',padding:+r.padding||4,
+    visible:r.visible!==false
   }));
   if(S.eIdx===cardIdx){updBlkList();renderEdit();}return true;
 };
